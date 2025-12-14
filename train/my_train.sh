@@ -1,0 +1,14 @@
+python my_train.py \
+--name painter \
+--gpu_ids 0 \
+--model painter \
+--dataset_mode null \
+--batch_size 64 \
+--display_freq 25 \
+--print_freq 8 \
+--lr 1e-4 \
+--init_type normal \
+--n_epochs 420 \
+--n_epochs_decay 120 \
+--max_dataset_size 256 \
+--save_epoch_freq 20
