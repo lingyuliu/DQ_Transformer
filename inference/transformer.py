@@ -14,6 +14,7 @@ from torch.nn.modules.normalization import LayerNorm
 
 __all__ = ['Transformer', 'TransformerEncoder', 'TransformerDecoder', 'TransformerEncoderLayer', 'TransformerDecoderLayer']
 
+
 class Transformer(Module):
     r"""A transformer model. User is able to modify the attributes as needed. The architecture
     is based on the paper "Attention Is All You Need". Ashish Vaswani, Noam Shazeer,
@@ -66,6 +67,7 @@ class Transformer(Module):
                                                     **factory_kwargs)
             encoder_norm = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
             self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+            self.encoder_layernorm = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
 
         if custom_decoder is not None:
             self.decoder = custom_decoder
@@ -75,6 +77,8 @@ class Transformer(Module):
                                                     **factory_kwargs)
             decoder_norm = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
             self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm)
+            self.decoder_layernorm1 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+            self.decoder_layernorm2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
 
         self._reset_parameters()
 
@@ -142,11 +146,14 @@ class Transformer(Module):
         if src.size(-1) != self.d_model or tgt.size(-1) != self.d_model:
             raise RuntimeError("the feature number of src and tgt must be equal to d_model")
 
+        # src = self.encoder_layernorm(src)
         memory = self.encoder(src, mask=src_mask, src_key_padding_mask=src_key_padding_mask)
-        output, attlist = self.decoder(tgt, memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
+        memory = self.decoder_layernorm1(memory)
+        # tgt = self.decoder_layernorm2(tgt)
+        output = self.decoder(tgt, memory, tgt_mask=tgt_mask, memory_mask=memory_mask,
                               tgt_key_padding_mask=tgt_key_padding_mask,
                               memory_key_padding_mask=memory_key_padding_mask)
-        return output, attlist
+        return output
 
     @staticmethod
     def generate_square_subsequent_mask(sz: int, device='cpu') -> Tensor:
@@ -219,6 +226,15 @@ class TransformerEncoder(Module):
             target_type=src.dtype
         )
 
+        mask = F._canonical_mask(
+            mask=mask,
+            mask_name="mask",
+            other_type=None,
+            other_name="",
+            target_type=src.dtype,
+            check_other=False,
+        )
+
         output = src
         convert_to_nested = False
         first_layer = self.layers[0]
@@ -227,7 +243,7 @@ class TransformerEncoder(Module):
         str_first_layer = "self.layers[0]"
         if not isinstance(first_layer, torch.nn.TransformerEncoderLayer):
             why_not_sparsity_fast_path = f"{str_first_layer} was not TransformerEncoderLayer"
-        elif first_layer.norm_first :
+        elif first_layer.norm_first:
             why_not_sparsity_fast_path = f"{str_first_layer}.norm_first was True"
         elif first_layer.training:
             why_not_sparsity_fast_path = f"{str_first_layer} was in training mode"
@@ -237,7 +253,7 @@ class TransformerEncoder(Module):
             why_not_sparsity_fast_path = f"{str_first_layer}.self_attn._qkv_same_embed_dim was not True"
         elif not first_layer.activation_relu_or_gelu:
             why_not_sparsity_fast_path = f" {str_first_layer}.activation_relu_or_gelu was not True"
-        elif not (first_layer.norm1.eps == first_layer.norm2.eps) :
+        elif not (first_layer.norm1.eps == first_layer.norm2.eps):
             why_not_sparsity_fast_path = f"{str_first_layer}.norm1.eps was not equal to {str_first_layer}.norm2.eps"
         elif not src.dim() == 3:
             why_not_sparsity_fast_path = f"input not batched; expected src.dim() of 3 but got {src.dim()}"
@@ -246,7 +262,7 @@ class TransformerEncoder(Module):
         elif src_key_padding_mask is None:
             why_not_sparsity_fast_path = "src_key_padding_mask was None"
         elif (((not hasattr(self, "mask_check")) or self.mask_check)
-                and not torch._nested_tensor_from_mask_left_aligned(src, src_key_padding_mask.logical_not())):
+              and not torch._nested_tensor_from_mask_left_aligned(src, src_key_padding_mask.logical_not())):
             why_not_sparsity_fast_path = "mask_check enabled, and src and src_key_padding_mask was not left aligned"
         elif output.is_nested:
             why_not_sparsity_fast_path = "NestedTensor input is not supported"
@@ -355,17 +371,18 @@ class TransformerDecoder(Module):
             see the docs in Transformer class.
         """
         output = tgt
-        att_maps = []
+
         for mod in self.layers:
-            output, att_map = mod(output, memory, tgt_mask=tgt_mask,
+            output = mod(output, memory, tgt_mask=tgt_mask,
                          memory_mask=memory_mask,
                          tgt_key_padding_mask=tgt_key_padding_mask,
                          memory_key_padding_mask=memory_key_padding_mask)
-            att_maps.append(att_map)
+
         if self.norm is not None:
             output = self.norm(output)
 
-        return output, att_maps
+        return output
+
 
 class TransformerEncoderLayer(Module):
     r"""TransformerEncoderLayer is made up of self-attn and feedforward network.
@@ -443,6 +460,8 @@ class TransformerEncoderLayer(Module):
         self.norm_first = norm_first
         self.norm1 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.norm2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm1_2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm2_2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.dropout1 = Dropout(dropout)
         self.dropout2 = Dropout(dropout)
 
@@ -464,7 +483,6 @@ class TransformerEncoderLayer(Module):
         super().__setstate__(state)
         if not hasattr(self, 'activation'):
             self.activation = F.relu
-
 
     def forward(
             self,
@@ -492,15 +510,24 @@ class TransformerEncoderLayer(Module):
             target_type=src.dtype
         )
 
+        src_mask = F._canonical_mask(
+            mask=src_mask,
+            mask_name="src_mask",
+            other_type=None,
+            other_name="",
+            target_type=src.dtype,
+            check_other=False,
+        )
+
         # see Fig. 1 of https://arxiv.org/pdf/2002.04745v1.pdf
         why_not_sparsity_fast_path = ''
         if not src.dim() == 3:
             why_not_sparsity_fast_path = f"input not batched; expected src.dim() of 3 but got {src.dim()}"
         elif self.training:
             why_not_sparsity_fast_path = "training is enabled"
-        elif not self.self_attn.batch_first :
+        elif not self.self_attn.batch_first:
             why_not_sparsity_fast_path = "self_attn.batch_first was not True"
-        elif not self.self_attn._qkv_same_embed_dim :
+        elif not self.self_attn._qkv_same_embed_dim:
             why_not_sparsity_fast_path = "self_attn._qkv_same_embed_dim was not True"
         elif not self.activation_relu_or_gelu:
             why_not_sparsity_fast_path = "activation_relu_or_gelu was not True"
@@ -564,24 +591,23 @@ class TransformerEncoderLayer(Module):
                     mask_type,
                 )
 
-
         x = src
         if self.norm_first:
-            x = x + self._sa_block(self.norm1(x), src_mask, src_key_padding_mask)
-            x = x + self._ff_block(self.norm2(x))
+            x = x + self.norm1_2(self._sa_block(self.norm1(x), src_mask, src_key_padding_mask, is_causal=is_causal))
+            x = x + self.norm2_2(self._ff_block(self.norm2(x)))
         else:
-            x = self.norm1(x + self._sa_block(x, src_mask, src_key_padding_mask))
+            x = self.norm1(x + self._sa_block(x, src_mask, src_key_padding_mask, is_causal=is_causal))
             x = self.norm2(x + self._ff_block(x))
 
         return x
 
     # self-attention block
     def _sa_block(self, x: Tensor,
-                  attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
+                  attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor], is_causal: bool = False) -> Tensor:
         x = self.self_attn(x, x, x,
                            attn_mask=attn_mask,
                            key_padding_mask=key_padding_mask,
-                           need_weights=False)[0]
+                           need_weights=False, is_causal=is_causal)[0]
         return self.dropout1(x)
 
     # feed forward block
@@ -645,6 +671,11 @@ class TransformerDecoderLayer(Module):
         self.norm1 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.norm2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.norm3 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+
+        self.norm1_2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm2_2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        self.norm3_2 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+
         self.dropout1 = Dropout(dropout)
         self.dropout2 = Dropout(dropout)
         self.dropout3 = Dropout(dropout)
@@ -661,15 +692,15 @@ class TransformerDecoderLayer(Module):
         super().__setstate__(state)
 
     def forward(
-        self,
-        tgt: Tensor,
-        memory: Tensor,
-        tgt_mask: Optional[Tensor] = None,
-        memory_mask: Optional[Tensor] = None,
-        tgt_key_padding_mask: Optional[Tensor] = None,
-        memory_key_padding_mask: Optional[Tensor] = None,
-        tgt_is_causal: bool = False,
-        memory_is_causal: bool = False,
+            self,
+            tgt: Tensor,
+            memory: Tensor,
+            tgt_mask: Optional[Tensor] = None,
+            memory_mask: Optional[Tensor] = None,
+            tgt_key_padding_mask: Optional[Tensor] = None,
+            memory_key_padding_mask: Optional[Tensor] = None,
+            tgt_is_causal: bool = False,
+            memory_is_causal: bool = False,
     ) -> Tensor:
         r"""Pass the inputs (and mask) through the decoder layer.
 
@@ -691,16 +722,15 @@ class TransformerDecoderLayer(Module):
 
         x = tgt
         if self.norm_first:
-            x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal)
-            x = x + self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask, memory_is_causal)
-            x = x + self._ff_block(self.norm3(x))
+            x = x + self.norm1_2(self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal))
+            x = x + self.norm2_2(self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask, memory_is_causal))
+            x = x + self.norm3_2(self._ff_block(self.norm3(x)))
         else:
             x = self.norm1(x + self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal))
-            mx, att_weights = self._mha_block(x, memory, memory_mask, memory_key_padding_mask, memory_is_causal)
-            x = self.norm2(x + mx)
+            x = self.norm2(x + self._mha_block(x, memory, memory_mask, memory_key_padding_mask, memory_is_causal))
             x = self.norm3(x + self._ff_block(x))
 
-        return x, att_weights
+        return x
 
     # self-attention block
     def _sa_block(self, x: Tensor,
@@ -715,12 +745,12 @@ class TransformerDecoderLayer(Module):
     # multihead attention block
     def _mha_block(self, x: Tensor, mem: Tensor,
                    attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor], is_causal: bool = False) -> Tensor:
-        x, att = self.multihead_attn(x, mem, mem,
+        x = self.multihead_attn(x, mem, mem,
                                 attn_mask=attn_mask,
                                 key_padding_mask=key_padding_mask,
                                 is_causal=is_causal,
-                                need_weights=True)
-        return self.dropout2(x), att
+                                need_weights=False)[0]
+        return self.dropout2(x)
 
     # feed forward block
     def _ff_block(self, x: Tensor) -> Tensor:

@@ -37,13 +37,12 @@ class SignWithSigmoidGrad(torch.autograd.Function):
         return grad_input
 
 
-class Painter_3kv(nn.Module):
+class Painter(nn.Module):
 
     def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3, device="cpu"):
         super().__init__()
         self.enc_img = nn.Sequential(
             nn.ReflectionPad2d(1),
-            # nn.Conv2d(3, 32, 3, 1),
             CoordConv2d(3, 32, 3, 1, with_r=True, use_cuda=device),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
@@ -82,17 +81,11 @@ class Painter_3kv(nn.Module):
             nn.Conv2d(64, 128, 3, 2),
             nn.BatchNorm2d(128),
             nn.ReLU(True),
-            # nn.ReflectionPad2d(1),
-            # nn.Conv2d(128, 256, 3, 2),
-            # nn.BatchNorm2d(256),
-            # nn.ReLU(True),
         )
         self.conv = nn.Conv2d(128 * 3, hidden_dim, 1)
 
         self.sub_conv1 = nn.Sequential(nn.Conv1d(128, 256, 1, 1))
         self.sub_conv2 = nn.Sequential(nn.Conv1d(64, 8, 1, 1))
-
-        # self.sub_norm = LayerNorm(256, eps=1e-5)
 
         self.transformer = Transformer(hidden_dim, n_heads, n_enc_layers, n_dec_layers, batch_first=True)  # , norm_first=True
         self.linear_param = nn.Sequential(
@@ -105,24 +98,22 @@ class Painter_3kv(nn.Module):
 
     def forward(self, img, canvas, cha):
         b, _, H, W = img.shape
-        It = self.enc_img(img)  # [64, 128, 8, 8]
+        It = self.enc_img(img)
         Ic = self.enc_canvas(canvas)
         Isub = self.enc_img3(cha)
         h, w = 8, 8
 
         feat = torch.cat([It, Ic, Isub], dim=1)
-        feat_conv = self.conv(feat)  # [64, 128*3, 8, 8]
-        # feat_conv = feat
+        feat_conv = self.conv(feat)
         feat_conv = feat_conv.flatten(2).permute(0, 2, 1).contiguous()
 
-        Isub = Isub.flatten(2)  # [64,128,64]
-        Isub = self.sub_conv1(Isub)  # [64,256,64]
-        Isub = Isub.permute(0, 2, 1)  # [64,64,256]
-        Isub = self.sub_conv2(Isub)  # [64,8,256]
+        Isub = Isub.flatten(2)
+        Isub = self.sub_conv1(Isub)
+        Isub = Isub.permute(0, 2, 1)
+        Isub = self.sub_conv2(Isub)
 
         kv = feat_conv
-        hidden_state, attlist = self.transformer(kv, Isub.contiguous())
-        # hidden_state = hidden_state.permute(1, 0, 2).contiguous()  # [64, 8, 256]
-        param = self.linear_param(hidden_state)  # [64, 8, 5]
+        hidden_state = self.transformer(kv, Isub.contiguous())
+        param = self.linear_param(hidden_state)
         decision = self.linear_decider(hidden_state)
-        return param, decision, attlist
+        return param, decision
