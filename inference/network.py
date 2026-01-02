@@ -4,7 +4,6 @@ from torch.nn import init
 from torch.optim import lr_scheduler
 from torch.nn import LayerNorm
 
-from ConvNeXt import ConvNeXt
 from transformer import Transformer
 from coordconv import CoordConv2d, CoordConv1d
 
@@ -39,9 +38,10 @@ class SignWithSigmoidGrad(torch.autograd.Function):
 
 class Painter(nn.Module):
 
-    def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3, device="cpu"):
+    def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3,
+                 device="cpu"):
         super().__init__()
-        self.enc_img = nn.Sequential(
+        self.local_encoder_t = nn.Sequential(
             nn.ReflectionPad2d(1),
             CoordConv2d(3, 32, 3, 1, with_r=True, use_cuda=device),
             nn.BatchNorm2d(32),
@@ -54,7 +54,7 @@ class Painter(nn.Module):
             nn.Conv2d(64, 128, 3, 2),
             nn.BatchNorm2d(128),
             nn.ReLU(True))
-        self.enc_canvas = nn.Sequential(
+        self.local_encoder_c = nn.Sequential(
             nn.ReflectionPad2d(1),
             CoordConv2d(3, 32, 3, 1, with_r=True, use_cuda=device),
             nn.BatchNorm2d(32),
@@ -68,7 +68,7 @@ class Painter(nn.Module):
             nn.BatchNorm2d(128),
             nn.ReLU(True))
 
-        self.enc_img3 = nn.Sequential(
+        self.local_encoder_d = nn.Sequential(
             nn.ReflectionPad2d(1),
             CoordConv2d(3, 32, 3, 1, with_r=True, use_cuda=device),
             nn.BatchNorm2d(32),
@@ -84,10 +84,10 @@ class Painter(nn.Module):
         )
         self.conv = nn.Conv2d(128 * 3, hidden_dim, 1)
 
-        self.sub_conv1 = nn.Sequential(nn.Conv1d(128, 256, 1, 1))
-        self.sub_conv2 = nn.Sequential(nn.Conv1d(64, 8, 1, 1))
+        self.sub_conv1 = nn.Conv1d(128, 256, 1, 1)
+        self.sub_conv2 = nn.Conv1d(64, 8, 1, 1)
 
-        self.transformer = Transformer(hidden_dim, n_heads, n_enc_layers, n_dec_layers, batch_first=True)  # , norm_first=True
+        self.DQ_transformer = nn.Transformer(hidden_dim, n_heads, n_enc_layers, n_dec_layers, batch_first=True)
         self.linear_param = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
@@ -98,9 +98,9 @@ class Painter(nn.Module):
 
     def forward(self, img, canvas, cha):
         b, _, H, W = img.shape
-        It = self.enc_img(img)
-        Ic = self.enc_canvas(canvas)
-        Isub = self.enc_img3(cha)
+        It = self.local_encoder_t(img)
+        Ic = self.local_encoder_c(canvas)
+        Isub = self.local_encoder_d(abs(cha))
         h, w = 8, 8
 
         feat = torch.cat([It, Ic, Isub], dim=1)
@@ -113,7 +113,7 @@ class Painter(nn.Module):
         Isub = self.sub_conv2(Isub)
 
         kv = feat_conv
-        hidden_state = self.transformer(kv, Isub.contiguous())
+        hidden_state = self.DQ_transformer(kv, Isub.contiguous())
         param = self.linear_param(hidden_state)
         decision = self.linear_decider(hidden_state)
         return param, decision

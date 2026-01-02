@@ -374,7 +374,8 @@ def crop(img, h, w):
     return img
 
 
-def main(input_path, model_path, output_dir, need_animation=False, resize_h=None, resize_w=None, serial=False):
+def main(input_path, model_path, output_dir, need_animation=False, resize_h=None, resize_w=None, serial=False,
+         gpu_id=0):
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
     input_name = os.path.basename(input_path)
@@ -389,9 +390,8 @@ def main(input_path, model_path, output_dir, need_animation=False, resize_h=None
             os.mkdir(frame_dir)
     patch_size = 32
     stroke_num = 8
-    gpu_id = 2
     device = torch.device('cuda:{}'.format(gpu_id) if torch.cuda.is_available() else "cpu")
-    net_g = network.Painter(5, stroke_num, 256, 8, 3, 3).to(device)
+    net_g = network.Painter(5, stroke_num, 256, 8, 3, 3, device=device).to(device)
     net_g.load_state_dict(torch.load(model_path))
     net_g.eval()
     for param in net_g.parameters():
@@ -491,9 +491,10 @@ def main(input_path, model_path, output_dir, need_animation=False, resize_h=None
 
 if __name__ == '__main__':
     main(input_path='',
-         model_path='',
+         model_path='./painter.pth',
          output_dir='output/',
          need_animation=False,  # whether need intermediate results for animation.
          resize_h=512,  # resize original input to this size. None means do not resize.
          resize_w=512,  # resize original input to this size. None means do not resize.
-         serial=False)  # if need animation, serial must be True.
+         serial=False,
+         gpu_id=0)  # if need animation, serial must be True.
