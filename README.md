@@ -28,6 +28,8 @@
 > these results with fewer strokes. The stroke-by-stroke painting
 > animations are available on our project website.
 
+This work has been accepted by IEEE Transactions on Visualization and Computer Graphics, 2026. 
+
 ## Prerequisites
 
 * Linux or macOS
