@@ -2,6 +2,8 @@
 
 > [[Project Page](https://differential-query-painter.github.io/DQ-painter/)]
 
+This work has been accepted by *IEEE Transactions on Visualization and Computer Graphics*, 2026. 
+
 ### Abstract
 
 > This work introduces a new approach to automatic
@@ -28,7 +30,7 @@
 > these results with fewer strokes. The stroke-by-stroke painting
 > animations are available on our project website.
 
-This work has been accepted by IEEE Transactions on Visualization and Computer Graphics, 2026. 
+
 
 ## Prerequisites
 
