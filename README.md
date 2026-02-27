@@ -53,6 +53,18 @@ This work has been accepted by *IEEE Transactions on Visualization and Computer 
   cd inference
   python inference.py
 ```
+## Citation
+
+If you find this code helpful for your research, please cite:
+
+```
+@article{liu2026look,
+author = "Liu, Lingyu and Wang, Yaxiong and Zhu, Li and Liao, Lizi and Zheng, Zhedong",
+title = "Look, Compare and Draw: Differential Query Transformer for Automatic Oil Painting",
+journal = "TVCG",
+code = "https://differential-query-painter.github.io/DQ-painter/",
+year = "2026" }
+```
 
 ## Acknowledgments
 
