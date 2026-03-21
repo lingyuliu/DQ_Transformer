@@ -4,6 +4,8 @@
 
 This work has been accepted by *IEEE Transactions on Visualization and Computer Graphics*, 2026. 
 
+<img src="pics/merged_output.gif" width="800" alt="">
+
 ### Abstract
 
 > This work introduces a new approach to automatic
