@@ -1,7 +1,7 @@
 # Look, Compare and Draw: Differential Query Transformer for Automatic Oil Painting
 
 > [[Project Page](https://differential-query-painter.github.io/DQ-painter/)]
-> [[paepr](https://arxiv.org/abs/2603.27720)]
+> [[Paper](https://arxiv.org/abs/2603.27720)]
 
 
 This work has been accepted by *IEEE Transactions on Visualization and Computer Graphics*, 2026. 
